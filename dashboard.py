@@ -22,7 +22,7 @@ def hash_password(password):
 
 # 验证用户
 def authenticate(username, password):
-    return username == "alantany" and hash_password(password) == hash_password("Mikeno01")
+    return username == "alantany" and password == "Mikeno01"
 
 # 登录页面
 def login_page():
@@ -45,10 +45,10 @@ def main():
         login_page()
     else:
         # 创建两个标签页
-        tab1, tab2 = st.tabs(["应用仪表板", "管理应用"])
+        tab1, tab2 = st.tabs(["我的应用", "管理应用"])
         
         with tab1:
-            st.title("工具仪表板")
+            st.title("我的应用")
 
             # 加载现有应用
             apps = load_apps()
@@ -60,29 +60,31 @@ def main():
                 background-color: #f2f2f7;
             }
             .app-icon {
-                width: 60px;
-                height: 60px;
-                margin: 0 auto 10px;
-                border-radius: 15px;
+                width: 120px;  /* 原来是60px */
+                height: 120px;  /* 原来是60px */
+                margin: 0 auto 20px;  /* 原来是10px */
+                border-radius: 30px;  /* 原来是15px */
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                font-size: 30px;
+                font-size: 60px;  /* 原来是30px */
                 color: white;
             }
             .app-name {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
                 font-weight: 500;
-                font-size: 14px;
+                font-size: 24px;  /* 将字体大小从20px增加到24px */
                 color: #1c1c1e;
                 text-align: center;
+                margin-top: 10px;  /* 增加与图标的间距 */
             }
             .app-container {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                padding: 10px;
+                padding: 20px;  /* 原来是10px */
                 transition: transform 0.3s;
+                margin-bottom: 20px;  /* 增加底部间距 */
             }
             .app-container:hover {
                 transform: scale(1.05);
@@ -164,10 +166,6 @@ def main():
                         del st.session_state.editing_index
                         st.success("应用已更新!")
                         st.rerun()
-
-        if st.button("登出"):
-            st.session_state.logged_in = False
-            st.rerun()
 
 if __name__ == "__main__":
     main()
