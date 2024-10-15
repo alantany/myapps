@@ -1,25 +1,18 @@
+import json
 import streamlit as st
 import math
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-# Firebase 配置信息
-firebase_config = {
-    "apiKey": "AIzaSyDpAamnXrfgiRl6T7j1gYuM-Lfb7mNtrfU",
-    "authDomain": "kids-coder.firebaseapp.com",
-    "databaseURL": "https://kids-coder.firebaseio.com",
-    "projectId": "kids-coder",
-    "storageBucket": "kids-coder.appspot.com",
-    "messagingSenderId": "816808155181",
-    "appId": "1:816808155181:web:f361e52b77001d01f300a4"
-}
+# 从 Streamlit secrets 获取 Firebase 凭证
+firebase_credentials = json.loads(st.secrets["FIREBASE_CREDENTIALS"])
 
 # 初始化 Firebase
 if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase-adminsdk.json")
+    cred = credentials.Certificate(firebase_credentials)
     firebase_admin.initialize_app(cred, {
-        'databaseURL': firebase_config['databaseURL']
+        'databaseURL': "https://kids-coder.firebaseio.com"
     })
 
 # 获取数据库引用
