@@ -4,8 +4,8 @@ import requests
 import json
 
 # JSONbin.io 配置
-JSONBIN_API_KEY = st.secrets["JSONBIN_API_KEY"]  # 使用 Streamlit secrets
-JSONBIN_BIN_ID = st.secrets["JSONBIN_BIN_ID"]    # 使用 Streamlit secrets
+JSONBIN_API_KEY = st.secrets["$2a$10$jyU2Ab2HI2rXPLtn/LHE5eS/uwZsIZkf8icc1KlhWyuTlkPO44t8G"]  # 使用 Streamlit secrets
+JSONBIN_BIN_ID = st.secrets["670e6c04e41b4d34e4432b1c"]    # 使用 Streamlit secrets
 
 # JSONbin.io 操作函数
 def load_apps():
