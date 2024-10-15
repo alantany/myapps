@@ -1,29 +1,33 @@
-import json
 import streamlit as st
 import math
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
+import requests
+import json
 
-# 从 Streamlit secrets 获取 Firebase 凭证
-firebase_credentials = json.loads(st.secrets["FIREBASE_CREDENTIALS"])
+# JSONbin.io 配置
+JSONBIN_API_KEY = st.secrets["JSONBIN_API_KEY"]  # 使用 Streamlit secrets
+JSONBIN_BIN_ID = st.secrets["JSONBIN_BIN_ID"]    # 使用 Streamlit secrets
 
-# 初始化 Firebase
-if not firebase_admin._apps:
-    cred = credentials.Certificate(firebase_credentials)
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': "https://kids-coder.firebaseio.com"
-    })
-
-# 获取数据库引用
-ref = db.reference('apps')
-
-# 加载应用数据
+# JSONbin.io 操作函数
 def load_apps():
-    apps = ref.get()
-    return [app for app in apps.values()] if apps else []
+    url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
+    headers = {
+        "X-Master-Key": JSONBIN_API_KEY
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return response.json()['record']['apps']
+    return []
 
-# 保存新应用
+def save_apps(apps):
+    url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_API_KEY
+    }
+    data = {"apps": apps}
+    response = requests.put(url, json=data, headers=headers)
+    return response.status_code == 200
+
 def save_app(name, url, color):
     apps = load_apps()
     new_app = {
@@ -32,41 +36,32 @@ def save_app(name, url, color):
         'color': color,
         'position': len(apps) + 1
     }
-    ref.push(new_app)
+    apps.append(new_app)
+    save_apps(apps)
 
-# 更新应用
-def update_app(key, name, url, color):
-    ref.child(key).update({
-        'name': name,
-        'url': url,
-        'color': color
-    })
+def update_app(index, name, url, color):
+    apps = load_apps()
+    apps[index]['name'] = name
+    apps[index]['url'] = url
+    apps[index]['color'] = color
+    save_apps(apps)
 
-# 删除应用
-def delete_app(key):
-    ref.child(key).delete()
+def delete_app(index):
+    apps = load_apps()
+    del apps[index]
+    for i, app in enumerate(apps):
+        app['position'] = i + 1
+    save_apps(apps)
 
-# 移动应用位置
-def move_app(key, direction):
-    apps = ref.get()
-    app_keys = list(apps.keys())
-    app_index = app_keys.index(key)
-    
-    if direction == 'up' and app_index > 0:
-        swap_key = app_keys[app_index - 1]
-    elif direction == 'down' and app_index < len(app_keys) - 1:
-        swap_key = app_keys[app_index + 1]
-    else:
-        return
-    
-    app1 = apps[key]
-    app2 = apps[swap_key]
-    app1['position'], app2['position'] = app2['position'], app1['position']
-    
-    ref.update({
-        key: app1,
-        swap_key: app2
-    })
+def move_app(index, direction):
+    apps = load_apps()
+    if direction == 'up' and index > 0:
+        apps[index], apps[index-1] = apps[index-1], apps[index]
+    elif direction == 'down' and index < len(apps) - 1:
+        apps[index], apps[index+1] = apps[index+1], apps[index]
+    for i, app in enumerate(apps):
+        app['position'] = i + 1
+    save_apps(apps)
 
 # 主页面
 def main():
@@ -162,28 +157,27 @@ def main():
 
         # 管理现有应用
         st.subheader("管理现有应用")
-        apps = ref.get()
-        if apps:
-            for key, app in apps.items():
-                col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
-                with col1:
-                    st.write(f"{app['name']} - {app['url']}")
-                with col2:
-                    if st.button(f"编辑", key=f"edit_{key}"):
-                        st.session_state.editing_app = app
-                        st.session_state.editing_app_key = key
-                with col3:
-                    if st.button(f"删除", key=f"delete_{key}"):
-                        delete_app(key)
-                        st.rerun()
-                with col4:
-                    if st.button("↑", key=f"up_{key}"):
-                        move_app(key, 'up')
-                        st.rerun()
-                with col5:
-                    if st.button("↓", key=f"down_{key}"):
-                        move_app(key, 'down')
-                        st.rerun()
+        apps = load_apps()
+        for i, app in enumerate(apps):
+            col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+            with col1:
+                st.write(f"{app['name']} - {app['url']}")
+            with col2:
+                if st.button(f"编辑", key=f"edit_{i}"):
+                    st.session_state.editing_app = app
+                    st.session_state.editing_app_index = i
+            with col3:
+                if st.button(f"删除", key=f"delete_{i}"):
+                    delete_app(i)
+                    st.rerun()
+            with col4:
+                if st.button("↑", key=f"up_{i}"):
+                    move_app(i, 'up')
+                    st.rerun()
+            with col5:
+                if st.button("↓", key=f"down_{i}"):
+                    move_app(i, 'down')
+                    st.rerun()
 
         # 编辑应用
         if 'editing_app' in st.session_state:
@@ -196,9 +190,9 @@ def main():
                 with col2:
                     color = st.color_picker("图标颜色", value=st.session_state.editing_app['color'])
                 if st.form_submit_button("保存修改"):
-                    update_app(st.session_state.editing_app_key, name, url, color)
+                    update_app(st.session_state.editing_app_index, name, url, color)
                     del st.session_state.editing_app
-                    del st.session_state.editing_app_key
+                    del st.session_state.editing_app_index
                     st.success("应用已更新!")
                     st.rerun()
 
