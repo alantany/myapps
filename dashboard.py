@@ -1,80 +1,83 @@
 import streamlit as st
-import sqlite3
 import math
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
 
-# 创建数据库连接
-def get_db_connection():
-    conn = sqlite3.connect('apps.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+# Firebase 配置信息
+firebase_config = {
+    "apiKey": "AIzaSyDpAamnXrfgiRl6T7j1gYuM-Lfb7mNtrfU",
+    "authDomain": "kids-coder.firebaseapp.com",
+    "databaseURL": "https://kids-coder.firebaseio.com",
+    "projectId": "kids-coder",
+    "storageBucket": "kids-coder.appspot.com",
+    "messagingSenderId": "816808155181",
+    "appId": "1:816808155181:web:f361e52b77001d01f300a4"
+}
 
-# 初始化数据库
-def init_db():
-    conn = get_db_connection()
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS apps (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            url TEXT NOT NULL,
-            color TEXT NOT NULL,
-            position INTEGER NOT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# 初始化 Firebase
+if not firebase_admin._apps:
+    cred = credentials.Certificate("firebase-adminsdk.json")
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': firebase_config['databaseURL']
+    })
+
+# 获取数据库引用
+ref = db.reference('apps')
 
 # 加载应用数据
 def load_apps():
-    conn = get_db_connection()
-    apps = conn.execute('SELECT * FROM apps ORDER BY position').fetchall()
-    conn.close()
-    return apps
+    apps = ref.get()
+    return [app for app in apps.values()] if apps else []
 
 # 保存新应用
 def save_app(name, url, color):
-    conn = get_db_connection()
-    max_position = conn.execute('SELECT MAX(position) FROM apps').fetchone()[0] or 0
-    conn.execute('INSERT INTO apps (name, url, color, position) VALUES (?, ?, ?, ?)',
-                 (name, url, color, max_position + 1))
-    conn.commit()
-    conn.close()
+    apps = load_apps()
+    new_app = {
+        'name': name,
+        'url': url,
+        'color': color,
+        'position': len(apps) + 1
+    }
+    ref.push(new_app)
 
 # 更新应用
-def update_app(id, name, url, color):
-    conn = get_db_connection()
-    conn.execute('UPDATE apps SET name = ?, url = ?, color = ? WHERE id = ?',
-                 (name, url, color, id))
-    conn.commit()
-    conn.close()
+def update_app(key, name, url, color):
+    ref.child(key).update({
+        'name': name,
+        'url': url,
+        'color': color
+    })
 
 # 删除应用
-def delete_app(id):
-    conn = get_db_connection()
-    conn.execute('DELETE FROM apps WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
+def delete_app(key):
+    ref.child(key).delete()
 
 # 移动应用位置
-def move_app(id, direction):
-    conn = get_db_connection()
-    current_app = conn.execute('SELECT * FROM apps WHERE id = ?', (id,)).fetchone()
-    if direction == 'up':
-        other_app = conn.execute('SELECT * FROM apps WHERE position < ? ORDER BY position DESC LIMIT 1', 
-                                 (current_app['position'],)).fetchone()
-    else:
-        other_app = conn.execute('SELECT * FROM apps WHERE position > ? ORDER BY position ASC LIMIT 1', 
-                                 (current_app['position'],)).fetchone()
+def move_app(key, direction):
+    apps = ref.get()
+    app_keys = list(apps.keys())
+    app_index = app_keys.index(key)
     
-    if other_app:
-        conn.execute('UPDATE apps SET position = ? WHERE id = ?', (other_app['position'], current_app['id']))
-        conn.execute('UPDATE apps SET position = ? WHERE id = ?', (current_app['position'], other_app['id']))
-        conn.commit()
-    conn.close()
+    if direction == 'up' and app_index > 0:
+        swap_key = app_keys[app_index - 1]
+    elif direction == 'down' and app_index < len(app_keys) - 1:
+        swap_key = app_keys[app_index + 1]
+    else:
+        return
+    
+    app1 = apps[key]
+    app2 = apps[swap_key]
+    app1['position'], app2['position'] = app2['position'], app1['position']
+    
+    ref.update({
+        key: app1,
+        swap_key: app2
+    })
 
 # 主页面
 def main():
     st.set_page_config(layout="wide")
-    init_db()
     
     # 创建两个标签页
     tab1, tab2 = st.tabs(["我的应用", "管理应用"])
@@ -166,26 +169,28 @@ def main():
 
         # 管理现有应用
         st.subheader("管理现有应用")
-        apps = load_apps()
-        for app in apps:
-            col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
-            with col1:
-                st.write(f"{app['name']} - {app['url']}")
-            with col2:
-                if st.button(f"编辑", key=f"edit_{app['id']}"):
-                    st.session_state.editing_app = app
-            with col3:
-                if st.button(f"删除", key=f"delete_{app['id']}"):
-                    delete_app(app['id'])
-                    st.rerun()
-            with col4:
-                if st.button("↑", key=f"up_{app['id']}"):
-                    move_app(app['id'], 'up')
-                    st.rerun()
-            with col5:
-                if st.button("↓", key=f"down_{app['id']}"):
-                    move_app(app['id'], 'down')
-                    st.rerun()
+        apps = ref.get()
+        if apps:
+            for key, app in apps.items():
+                col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
+                with col1:
+                    st.write(f"{app['name']} - {app['url']}")
+                with col2:
+                    if st.button(f"编辑", key=f"edit_{key}"):
+                        st.session_state.editing_app = app
+                        st.session_state.editing_app_key = key
+                with col3:
+                    if st.button(f"删除", key=f"delete_{key}"):
+                        delete_app(key)
+                        st.rerun()
+                with col4:
+                    if st.button("↑", key=f"up_{key}"):
+                        move_app(key, 'up')
+                        st.rerun()
+                with col5:
+                    if st.button("↓", key=f"down_{key}"):
+                        move_app(key, 'down')
+                        st.rerun()
 
         # 编辑应用
         if 'editing_app' in st.session_state:
@@ -198,8 +203,9 @@ def main():
                 with col2:
                     color = st.color_picker("图标颜色", value=st.session_state.editing_app['color'])
                 if st.form_submit_button("保存修改"):
-                    update_app(st.session_state.editing_app['id'], name, url, color)
+                    update_app(st.session_state.editing_app_key, name, url, color)
                     del st.session_state.editing_app
+                    del st.session_state.editing_app_key
                     st.success("应用已更新!")
                     st.rerun()
 
