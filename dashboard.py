@@ -1,67 +1,78 @@
 import streamlit as st
+import sqlite3
 import math
-import requests
-import json
+import time
 
-# JSONbin.io 配置
-JSONBIN_API_KEY = st.secrets["JSONBIN_API_KEY"]
-JSONBIN_BIN_ID = st.secrets["JSONBIN_BIN_ID"]
+# 创建数据库连接
+def get_db_connection():
+    conn = sqlite3.connect('apps.db')
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# JSONbin.io 操作函数
+# 初始化数据库
+def init_db():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS apps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            color TEXT NOT NULL,
+            position INTEGER NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# 加载应用数据
 def load_apps():
-    url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
-    headers = {
-        "X-Master-Key": JSONBIN_API_KEY
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()['record']['apps']
-    return []
+    conn = get_db_connection()
+    apps = conn.execute('SELECT * FROM apps ORDER BY position').fetchall()
+    conn.close()
+    return apps
 
-def save_apps(apps):
-    url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Master-Key": JSONBIN_API_KEY
-    }
-    data = {"apps": apps}
-    response = requests.put(url, json=data, headers=headers)
-    return response.status_code == 200
-
+# 保存新应用
 def save_app(name, url, color):
-    apps = load_apps()
-    new_app = {
-        'name': name,
-        'url': url,
-        'color': color,
-        'position': len(apps) + 1
-    }
-    apps.append(new_app)
-    save_apps(apps)
+    for _ in range(5):  # 尝试 5 次
+        try:
+            with get_db_connection() as conn:
+                current_count = conn.execute('SELECT COUNT(*) FROM apps').fetchone()[0]
+                position = current_count + 1
+                conn.execute('INSERT INTO apps (name, url, color, position) VALUES (?, ?, ?, ?)', 
+                             (name, url, color, position))
+            break  # 成功后退出循环
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e):
+                time.sleep(0.1)  # 等待 100 毫秒后重试
+            else:
+                raise  # 其他错误则抛出
 
+# 更新应用
 def update_app(index, name, url, color):
-    apps = load_apps()
-    apps[index]['name'] = name
-    apps[index]['url'] = url
-    apps[index]['color'] = color
-    save_apps(apps)
+    conn = get_db_connection()
+    conn.execute('UPDATE apps SET name = ?, url = ?, color = ? WHERE id = ?', (name, url, color, index))
+    conn.commit()
+    conn.close()
 
+# 删除应用
 def delete_app(index):
-    apps = load_apps()
-    del apps[index]
-    for i, app in enumerate(apps):
-        app['position'] = i + 1
-    save_apps(apps)
+    conn = get_db_connection()
+    conn.execute('DELETE FROM apps WHERE id = ?', (index,))
+    conn.commit()
+    conn.close()
 
+# 移动应用位置
 def move_app(index, direction):
+    conn = get_db_connection()
     apps = load_apps()
     if direction == 'up' and index > 0:
         apps[index], apps[index-1] = apps[index-1], apps[index]
     elif direction == 'down' and index < len(apps) - 1:
         apps[index], apps[index+1] = apps[index+1], apps[index]
     for i, app in enumerate(apps):
-        app['position'] = i + 1
-    save_apps(apps)
+        conn.execute('UPDATE apps SET position = ? WHERE id = ?', (i + 1, app['id']))
+    conn.commit()
+    conn.close()
 
 # 主页面
 def main():
@@ -165,18 +176,21 @@ def main():
             with col2:
                 if st.button(f"编辑", key=f"edit_{i}"):
                     st.session_state.editing_app = app
-                    st.session_state.editing_app_index = i
+                    st.session_state.editing_app_index = app['id']  # 使用 ID 进行编辑
             with col3:
                 if st.button(f"删除", key=f"delete_{i}"):
-                    delete_app(i)
+                    delete_app(app['id'])  # 使用 ID 进行删除
+                    st.success("应用已删除!")
                     st.rerun()
             with col4:
                 if st.button("↑", key=f"up_{i}"):
                     move_app(i, 'up')
+                    st.success("应用已上移!")
                     st.rerun()
             with col5:
                 if st.button("↓", key=f"down_{i}"):
                     move_app(i, 'down')
+                    st.success("应用已下移!")
                     st.rerun()
 
         # 编辑应用
@@ -192,9 +206,9 @@ def main():
                 if st.form_submit_button("保存修改"):
                     update_app(st.session_state.editing_app_index, name, url, color)
                     del st.session_state.editing_app
-                    del st.session_state.editing_app_index
                     st.success("应用已更新!")
                     st.rerun()
 
 if __name__ == "__main__":
+    init_db()  # 确保在主函数中初始化数据库
     main()
